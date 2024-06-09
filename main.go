@@ -46,7 +46,7 @@ func registryProxy(ctx context.Context, addr string, s3Client *minio.Client, buc
 		return fmt.Errorf("parse remote: %w", err)
 	}
 	var router http.ServeMux
-	router.HandleFunc("/v2/library/ubuntu/blobs/", func(w http.ResponseWriter, r *http.Request) {
+	blobCache := func(w http.ResponseWriter, r *http.Request) {
 		log.Println(addr, r.URL.String(), "=>", r.URL)
 		key := genCacheKey(prefix, r.URL)
 		_, err = s3Client.StatObject(ctx, bucket, key, minio.GetObjectOptions{})
@@ -75,8 +75,12 @@ func registryProxy(ctx context.Context, addr string, s3Client *minio.Client, buc
 			return
 		}
 		http.Redirect(w, r, presignedURL.String(), http.StatusTemporaryRedirect)
-	})
+	}
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.String(), "/blobs/sha256:") {
+			blobCache(w, r)
+			return
+		}
 		log.Println(addr, r.URL.String(), "=>", uri.String())
 		resp, err := proxy(uri, r)
 		if err != nil {
@@ -84,7 +88,6 @@ func registryProxy(ctx context.Context, addr string, s3Client *minio.Client, buc
 			return
 		}
 		defer resp.Body.Close()
-
 		for key := range resp.Header {
 			w.Header().Add(key, resp.Header.Get(key))
 		}
