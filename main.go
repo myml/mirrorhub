@@ -27,9 +27,7 @@ func proxy(url *url.URL, r *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, fmt.Errorf("new request: %w", err)
 	}
-	for key := range r.Header {
-		req.Header.Set(key, r.Header.Get(key))
-	}
+	req.Header = r.Header
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("send request: %w", err)
@@ -49,7 +47,7 @@ func registryProxy(ctx context.Context, addr string, s3Client *minio.Client, buc
 	}
 	var router http.ServeMux
 	router.HandleFunc("/v2/library/ubuntu/blobs/", func(w http.ResponseWriter, r *http.Request) {
-		log.Println(r.URL.String())
+		log.Println(addr, r.URL.String(), "=>", r.URL)
 		key := genCacheKey(prefix, r.URL)
 		_, err = s3Client.StatObject(ctx, bucket, key, minio.GetObjectOptions{})
 		log.Println("stat", key, err)
@@ -79,7 +77,7 @@ func registryProxy(ctx context.Context, addr string, s3Client *minio.Client, buc
 		http.Redirect(w, r, presignedURL.String(), http.StatusTemporaryRedirect)
 	})
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		log.Println(r.URL.String())
+		log.Println(addr, r.URL.String(), "=>", uri.String())
 		resp, err := proxy(uri, r)
 		if err != nil {
 			log.Println(err)
