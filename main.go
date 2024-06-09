@@ -47,10 +47,9 @@ func registryProxy(ctx context.Context, addr string, s3Client *minio.Client, buc
 	}
 	var router http.ServeMux
 	blobCache := func(w http.ResponseWriter, r *http.Request) {
-		log.Println(addr, r.URL.String(), "=>", r.URL)
+		log.Println("blob cache", addr, r.URL.String(), "=>", r.URL)
 		key := genCacheKey(prefix, r.URL)
 		_, err = s3Client.StatObject(ctx, bucket, key, minio.GetObjectOptions{})
-		log.Println("stat", key, err)
 		if err != nil {
 			resp, err := proxy(uri, r)
 			if err != nil {
@@ -81,7 +80,7 @@ func registryProxy(ctx context.Context, addr string, s3Client *minio.Client, buc
 			blobCache(w, r)
 			return
 		}
-		log.Println(addr, r.URL.String(), "=>", uri.String())
+		log.Println("proxy", addr, r.URL.String(), "=>", uri.String())
 		resp, err := proxy(uri, r)
 		if err != nil {
 			log.Println(err)
@@ -106,11 +105,13 @@ func registryProxy(ctx context.Context, addr string, s3Client *minio.Client, buc
 
 func main() {
 	var endpoint, region, bucket, accessKey, secretKey string
+	var mirrors string
 	flag.StringVar(&endpoint, "endpoint", "", "s3 endpoint")
 	flag.StringVar(&bucket, "bucket", "", "s3 bucket")
 	flag.StringVar(&accessKey, "access_key", "", "s3 access key")
 	flag.StringVar(&secretKey, "secret_key", "", "s3 secret key")
 	flag.StringVar(&region, "region", "", "s3 region")
+	flag.StringVar(&mirrors, "mirrors", ":1234=>docker://registry-1.docker.io,:1235=>docker://ghcr.io", "mirror list")
 	flag.Parse()
 
 	if len(endpoint) == 0 {
@@ -131,23 +132,22 @@ func main() {
 	}
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(context.Background())
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		defer cancel()
-		prefix := "docker"
-		log.Println("0.0.0.0:1234 => hub.docker.com")
-		err = registryProxy(ctx, ":1234", minioClient, bucket, prefix, "https://registry-1.docker.io")
-		log.Println(err)
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		defer cancel()
-		prefix := "docker"
-		log.Println("0.0.0.0:1235 => ghcr.io")
-		err = registryProxy(ctx, ":1235", minioClient, bucket, prefix, "https://ghcr.io")
-		log.Println(err)
-	}()
+
+	mirrorList := strings.Split(mirrors, ",")
+	for index := range mirrorList {
+		arr := strings.Split(mirrorList[index], "=>")
+		addr := arr[0]
+		uri, err := url.Parse(arr[1])
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer cancel()
+			prefix := "docker"
+			log.Printf("%s => %s\n", addr, uri.Host)
+			err = registryProxy(ctx, addr, minioClient, bucket, prefix, "https://"+uri.Host)
+			log.Println(err)
+		}()
+	}
 	wg.Wait()
 }
