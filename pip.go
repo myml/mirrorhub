@@ -36,7 +36,7 @@ func pipMirror(ctx context.Context, addr string, bucket, prefix, remote string) 
 				return
 			}
 			// 小于1M时直接返回
-			if resp.ContentLength < 1 {
+			if resp.ContentLength < 1024 {
 				copyHander(w, resp)
 				_, err = io.Copy(w, resp.Body)
 				if err != nil {
