@@ -88,6 +88,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	log.Println(minioClient.StatObject(context.Background(), "backup", "360v6_swrt_ubi.img", minio.GetObjectOptions{}))
 	uri, err = url.Parse(dlEndpoint)
 	if err != nil {
 		log.Fatal(err)
