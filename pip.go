@@ -24,6 +24,7 @@ func pipMirror(ctx context.Context, addr string, bucket, prefix, remote string) 
 		key := genCacheKey(prefix, r.URL.String())
 		_, err = minioClient.StatObject(ctx, bucket, key, minio.GetObjectOptions{})
 		if err != nil {
+			r.Header.Del("Accept-Encoding")
 			resp, err := proxy(uri, r)
 			if err != nil {
 				log.Println(err)
@@ -36,7 +37,7 @@ func pipMirror(ctx context.Context, addr string, bucket, prefix, remote string) 
 				return
 			}
 			// 小于1M时直接返回
-			if resp.ContentLength < 1024 {
+			if resp.ContentLength < 1024*1024 {
 				copyHander(w, resp)
 				_, err = io.Copy(w, resp.Body)
 				if err != nil {
