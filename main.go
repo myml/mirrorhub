@@ -17,6 +17,9 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
+var minioClient *minio.Client
+var dlMiniClient *minio.Client
+
 func proxy(url *url.URL, r *http.Request) (*http.Response, error) {
 	r.URL.Host = url.Host
 	r.URL.Scheme = url.Scheme
@@ -39,6 +42,9 @@ func genCacheKey(prefix string, uri string) string {
 
 func copyHander(w http.ResponseWriter, resp *http.Response) {
 	for key := range resp.Header {
+		if key == "Content-Length" {
+			continue
+		}
 		for i := range resp.Header[key] {
 			w.Header().Add(key, resp.Header[key][i])
 		}
@@ -52,28 +58,44 @@ var Mirrors = []string{
 }
 
 func main() {
-	var endpoint, region, bucket, accessKey, secretKey string
+	var endpoint, dlEndpoint, region, bucket, accessKey, secretKey string
 	var mirrors string
 	flag.StringVar(&endpoint, "endpoint", "", "s3 endpoint")
+	flag.StringVar(&dlEndpoint, "download_endpoint", "", "s3 download endpoint")
 	flag.StringVar(&bucket, "bucket", "", "s3 bucket")
 	flag.StringVar(&accessKey, "access_key", "", "s3 access key")
 	flag.StringVar(&secretKey, "secret_key", "", "s3 secret key")
 	flag.StringVar(&region, "region", "", "s3 region")
 	flag.StringVar(&mirrors, "mirrors", strings.Join(Mirrors, ","), "mirror list")
 	flag.Parse()
-
+	log.Println(endpoint, dlEndpoint)
 	if len(endpoint) == 0 {
 		flag.PrintDefaults()
 		return
+	}
+	if len(dlEndpoint) == 0 {
+		dlEndpoint = endpoint
 	}
 	uri, err := url.Parse(endpoint)
 	if err != nil {
 		log.Fatal(err)
 	}
-	minioClient, err := minio.New(uri.Host, &minio.Options{
+	minioClient, err = minio.New(uri.Host, &minio.Options{
 		Region: region,
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: strings.HasPrefix(endpoint, "https://"),
+		Secure: uri.Scheme == "https",
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	uri, err = url.Parse(dlEndpoint)
+	if err != nil {
+		log.Fatal(err)
+	}
+	dlMiniClient, err = minio.New(uri.Host, &minio.Options{
+		Region: region,
+		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
+		Secure: uri.Scheme == "https",
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -86,19 +108,20 @@ func main() {
 		arr := strings.Split(mirrorList[index], "=>")
 		addr := arr[0]
 		uri, err := url.Parse(arr[1])
-
+		if err != nil {
+			log.Fatal(err)
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			defer cancel()
-			prefix := "docker"
 			log.Printf("%s => %s\n", addr, uri.Host)
 			switch uri.Scheme {
 			case "docker":
-				err = dockerMirror(ctx, addr, minioClient, bucket, prefix, "https://"+uri.Host)
+				err = dockerMirror(ctx, addr, bucket, "docker", "https://"+uri.Host)
 				log.Println(err)
 			case "pip":
-				err = pipMirror(ctx, addr, minioClient, bucket, prefix, "https://"+uri.Host)
+				err = pipMirror(ctx, addr, bucket, "pip", "https://"+uri.Host)
 				log.Println(err)
 			default:
 				log.Fatalln("unknown mirror type")

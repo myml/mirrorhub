@@ -9,12 +9,11 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/minio/minio-go/v7"
 )
 
-func dockerMirror(ctx context.Context, addr string, s3Client *minio.Client, bucket, prefix, remote string) error {
+func dockerMirror(ctx context.Context, addr string, bucket, prefix, remote string) error {
 	uri, err := url.Parse(remote)
 	if err != nil {
 		return fmt.Errorf("parse remote: %w", err)
@@ -23,7 +22,7 @@ func dockerMirror(ctx context.Context, addr string, s3Client *minio.Client, buck
 	blobCache := func(w http.ResponseWriter, r *http.Request) {
 		log.Println("blob cache", addr, r.URL.String(), "=>", remote)
 		key := genCacheKey(prefix, r.URL.String())
-		_, err = s3Client.StatObject(ctx, bucket, key, minio.GetObjectOptions{})
+		_, err = minioClient.StatObject(ctx, bucket, key, minio.GetObjectOptions{})
 		if err != nil {
 			resp, err := proxy(uri, r)
 			if err != nil {
@@ -31,11 +30,14 @@ func dockerMirror(ctx context.Context, addr string, s3Client *minio.Client, buck
 				return
 			}
 			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusNotModified {
+				copyHander(w, resp)
+				w.WriteHeader(resp.StatusCode)
+				return
+			}
 			// 小于1M时直接返回
 			if resp.ContentLength < 1024 {
-				for key := range resp.Header {
-					w.Header().Add(key, resp.Header.Get(key))
-				}
+				copyHander(w, resp)
 				_, err = io.Copy(w, resp.Body)
 				if err != nil {
 					log.Println(err)
@@ -43,7 +45,7 @@ func dockerMirror(ctx context.Context, addr string, s3Client *minio.Client, buck
 				return
 			}
 			// 转存到s3
-			_, err = s3Client.PutObject(context.Background(),
+			_, err = minioClient.PutObject(context.Background(),
 				bucket, key, resp.Body, resp.ContentLength,
 				minio.PutObjectOptions{ContentType: "application/octet-stream"},
 			)
@@ -52,14 +54,14 @@ func dockerMirror(ctx context.Context, addr string, s3Client *minio.Client, buck
 				return
 			}
 		}
-		presignedURL, err := s3Client.PresignedGetObject(context.Background(),
-			bucket, key, time.Second*10, nil,
-		)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		http.Redirect(w, r, presignedURL.String(), http.StatusTemporaryRedirect)
+		// presignedURL, err := dlMiniClient.PresignedGetObject(context.Background(),
+		// 	bucket, key, time.Second*10, nil,
+		// )
+		// if err != nil {
+		// 	fmt.Println(err)
+		// 	return
+		// }
+		http.Redirect(w, r, dlMiniClient.EndpointURL().String()+"/"+key, http.StatusTemporaryRedirect)
 	}
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.String(), "/blobs/sha256:") {
@@ -73,8 +75,10 @@ func dockerMirror(ctx context.Context, addr string, s3Client *minio.Client, buck
 			return
 		}
 		defer resp.Body.Close()
-		for key := range resp.Header {
-			w.Header().Add(key, resp.Header.Get(key))
+		copyHander(w, resp)
+		if resp.StatusCode == http.StatusNotModified {
+			w.WriteHeader(resp.StatusCode)
+			return
 		}
 		_, err = io.Copy(w, resp.Body)
 		if err != nil {
