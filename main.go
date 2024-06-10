@@ -6,15 +6,12 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	"io"
 	"log"
-	"net"
 	"net/http"
 	"net/url"
 	"path"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -35,72 +32,23 @@ func proxy(url *url.URL, r *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-func genCacheKey(prefix string, uri *url.URL) string {
-	key := md5.Sum([]byte(uri.String()))
+func genCacheKey(prefix string, uri string) string {
+	key := md5.Sum([]byte(uri))
 	return path.Join(prefix, hex.EncodeToString(key[:]))
 }
 
-func registryProxy(ctx context.Context, addr string, s3Client *minio.Client, bucket, prefix, remote string) error {
-	uri, err := url.Parse(remote)
-	if err != nil {
-		return fmt.Errorf("parse remote: %w", err)
+func copyHander(w http.ResponseWriter, resp *http.Response) {
+	for key := range resp.Header {
+		for i := range resp.Header[key] {
+			w.Header().Add(key, resp.Header[key][i])
+		}
 	}
-	var router http.ServeMux
-	blobCache := func(w http.ResponseWriter, r *http.Request) {
-		log.Println("blob cache", addr, r.URL.String(), "=>", r.URL)
-		key := genCacheKey(prefix, r.URL)
-		_, err = s3Client.StatObject(ctx, bucket, key, minio.GetObjectOptions{})
-		if err != nil {
-			resp, err := proxy(uri, r)
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			defer resp.Body.Close()
-			_, err = s3Client.PutObject(context.Background(),
-				bucket, key, resp.Body, resp.ContentLength,
-				minio.PutObjectOptions{ContentType: "application/octet-stream"},
-			)
-			if err != nil {
-				log.Println(err)
-				return
-			}
-		}
-		presignedURL, err := s3Client.PresignedGetObject(context.Background(),
-			bucket, key, time.Second*10, nil,
-		)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		http.Redirect(w, r, presignedURL.String(), http.StatusTemporaryRedirect)
-	}
-	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.String(), "/blobs/sha256:") {
-			blobCache(w, r)
-			return
-		}
-		log.Println("proxy", addr, r.URL.String(), "=>", uri.String())
-		resp, err := proxy(uri, r)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		defer resp.Body.Close()
-		for key := range resp.Header {
-			w.Header().Add(key, resp.Header.Get(key))
-		}
-		_, err = io.Copy(w, resp.Body)
-		if err != nil {
-			log.Println(err)
-		}
-	})
-	srv := &http.Server{
-		Addr:        addr,
-		BaseContext: func(net.Listener) context.Context { return ctx },
-		Handler:     &router,
-	}
-	return srv.ListenAndServe()
+}
+
+var Mirrors = []string{
+	":1234=>docker://registry-1.docker.io",
+	":1235=>docker://ghcr.io",
+	":1236=>pip://pypi.org",
 }
 
 func main() {
@@ -111,7 +59,7 @@ func main() {
 	flag.StringVar(&accessKey, "access_key", "", "s3 access key")
 	flag.StringVar(&secretKey, "secret_key", "", "s3 secret key")
 	flag.StringVar(&region, "region", "", "s3 region")
-	flag.StringVar(&mirrors, "mirrors", ":1234=>docker://registry-1.docker.io,:1235=>docker://ghcr.io", "mirror list")
+	flag.StringVar(&mirrors, "mirrors", strings.Join(Mirrors, ","), "mirror list")
 	flag.Parse()
 
 	if len(endpoint) == 0 {
@@ -145,8 +93,16 @@ func main() {
 			defer cancel()
 			prefix := "docker"
 			log.Printf("%s => %s\n", addr, uri.Host)
-			err = registryProxy(ctx, addr, minioClient, bucket, prefix, "https://"+uri.Host)
-			log.Println(err)
+			switch uri.Scheme {
+			case "docker":
+				err = dockerMirror(ctx, addr, minioClient, bucket, prefix, "https://"+uri.Host)
+				log.Println(err)
+			case "pip":
+				err = pipMirror(ctx, addr, minioClient, bucket, prefix, "https://"+uri.Host)
+				log.Println(err)
+			default:
+				log.Fatalln("unknown mirror type")
+			}
 		}()
 	}
 	wg.Wait()
