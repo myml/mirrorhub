@@ -35,8 +35,8 @@ func dockerMirror(ctx context.Context, addr string, bucket, prefix, remote strin
 				w.WriteHeader(resp.StatusCode)
 				return
 			}
-			// 小于1M时直接返回
-			if resp.ContentLength < 1024*1024 {
+			// 小于4M时直接返回
+			if resp.ContentLength < 1024*1024*4 {
 				copyHander(w, resp)
 				_, err = io.Copy(w, resp.Body)
 				if err != nil {
@@ -47,7 +47,10 @@ func dockerMirror(ctx context.Context, addr string, bucket, prefix, remote strin
 			// 转存到s3
 			_, err = minioClient.PutObject(context.Background(),
 				bucket, key, resp.Body, resp.ContentLength,
-				minio.PutObjectOptions{ContentType: "application/octet-stream"},
+				minio.PutObjectOptions{
+					ContentType:    "application/octet-stream",
+					SendContentMd5: true,
+				},
 			)
 			if err != nil {
 				log.Println(err)
