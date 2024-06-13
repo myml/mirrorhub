@@ -21,7 +21,7 @@ func pipMirror(ctx context.Context, logger *log.Logger, addr string, bucket, pre
 	var router http.ServeMux
 
 	packagesProxy := func(w http.ResponseWriter, r *http.Request) error {
-		logger.Println("blob cache", addr, r.URL.String(), "=>", remote)
+		logger.Println("blob cache", r.URL.String())
 		key := genCacheKey(prefix, r.URL.String())
 		_, err = minioClient.StatObject(ctx, bucket, key, minio.GetObjectOptions{})
 		if err != nil {
@@ -66,7 +66,7 @@ func pipMirror(ctx context.Context, logger *log.Logger, addr string, bucket, pre
 		return nil
 	}
 	indexProxy := func(w http.ResponseWriter, r *http.Request) error {
-		logger.Println("simple proxy", addr, r.URL.String(), "=>", remote)
+		logger.Println("index proxy", r.URL.String())
 		r.Header.Del("Accept-Encoding")
 		resp, err := proxy(uri, r)
 		if err != nil {

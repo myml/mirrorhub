@@ -20,7 +20,7 @@ func dockerMirror(ctx context.Context, logger *log.Logger, addr string, bucket, 
 	}
 	var router http.ServeMux
 	blobCache := func(w http.ResponseWriter, r *http.Request) error {
-		logger.Println("blob cache", addr, r.URL.String(), "=>", remote)
+		logger.Println("blob cache", r.URL.String())
 		key := genCacheKey(prefix, r.URL.String())
 		_, err = minioClient.StatObject(ctx, bucket, key, minio.GetObjectOptions{})
 		if err != nil {
@@ -66,7 +66,7 @@ func dockerMirror(ctx context.Context, logger *log.Logger, addr string, bucket, 
 		return nil
 	}
 	indexCache := func(w http.ResponseWriter, r *http.Request) error {
-		logger.Println("proxy", addr, r.URL.String(), "=>", remote)
+		logger.Println("index proxy", r.URL.String())
 		resp, err := proxy(uri, r)
 		if err != nil {
 			logger.Println(err)

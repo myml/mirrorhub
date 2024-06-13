@@ -119,11 +119,11 @@ func main() {
 			log.Printf("%s => %s\n", addr, uri.Host)
 			switch uri.Scheme {
 			case "docker":
-				logger := log.New(os.Stderr, "["+uri.Host+"]", log.LstdFlags|log.Lshortfile)
+				logger := log.New(os.Stderr, fmt.Sprintf("[%s] ", uri.Host), log.LstdFlags|log.Lshortfile)
 				err = dockerMirror(ctx, logger, addr, bucket, "docker", "https://"+uri.Host)
 				log.Println(err)
 			case "pip":
-				logger := log.New(os.Stderr, "["+uri.Host+"]", log.LstdFlags|log.Lshortfile)
+				logger := log.New(os.Stderr, fmt.Sprintf("[%s] ", uri.Host), log.LstdFlags|log.Lshortfile)
 				err = pipMirror(ctx, logger, addr, bucket, "pip", "https://"+uri.Host)
 				log.Println(err)
 			default:
