@@ -41,6 +41,7 @@ func dockerMirror(ctx context.Context, logger *log.Logger, addr string, bucket, 
 				if err != nil {
 					return fmt.Errorf("copy body: %w", err)
 				}
+				return nil
 			}
 			// 转存到s3
 			_, err = minioClient.PutObject(context.Background(),
