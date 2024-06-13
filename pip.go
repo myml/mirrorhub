@@ -94,14 +94,14 @@ func pipMirror(ctx context.Context, logger *log.Logger, addr string, bucket, pre
 	router.HandleFunc("/packages/", func(w http.ResponseWriter, r *http.Request) {
 		err := packagesProxy(w, r)
 		if err != nil {
-			logger.Println("index proxy: %w", err)
+			logger.Println("blob proxy error:", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	})
 	router.HandleFunc("/simple/", func(w http.ResponseWriter, r *http.Request) {
 		err := indexProxy(w, r)
 		if err != nil {
-			logger.Println("index proxy: %w", err)
+			logger.Println("index proxy error:", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	})

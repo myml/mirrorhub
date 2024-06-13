@@ -88,13 +88,13 @@ func dockerMirror(ctx context.Context, logger *log.Logger, addr string, bucket, 
 		if strings.Contains(r.URL.String(), "/blobs/sha256:") {
 			err = blobCache(w, r)
 			if err != nil {
-				logger.Println("blob cache: %w", err)
+				logger.Println("blob cache error:", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 			}
 		} else {
 			err = indexCache(w, r)
 			if err != nil {
-				logger.Println("index cache: %w", err)
+				logger.Println("index cache error:", err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 			}
 		}
