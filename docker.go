@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/minio/minio-go/v7"
 )
@@ -82,18 +83,19 @@ func dockerMirror(ctx context.Context, logger *log.Logger, addr string, bucket, 
 		}
 		return nil
 	}
-	router.HandleFunc("/blobs/", func(w http.ResponseWriter, r *http.Request) {
-		err := blobCache(w, r)
-		if err != nil {
-			logger.Println("blob cache: %w", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-	})
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		err := indexCache(w, r)
-		if err != nil {
-			logger.Println("index cache: %w", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		if strings.Contains(r.URL.String(), "/blobs/sha256:") {
+			err = blobCache(w, r)
+			if err != nil {
+				logger.Println("blob cache: %w", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+		} else {
+			err = indexCache(w, r)
+			if err != nil {
+				logger.Println("index cache: %w", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 		}
 	})
 	srv := &http.Server{
