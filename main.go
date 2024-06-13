@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"strings"
 	"sync"
@@ -119,10 +120,12 @@ func main() {
 			log.Printf("%s => %s\n", addr, uri.Host)
 			switch uri.Scheme {
 			case "docker":
-				err = dockerMirror(ctx, addr, bucket, "docker", "https://"+uri.Host)
+				logger := log.New(os.Stderr, "["+uri.Host+"]", log.LstdFlags|log.Lshortfile)
+				err = dockerMirror(ctx, logger, addr, bucket, "docker", "https://"+uri.Host)
 				log.Println(err)
 			case "pip":
-				err = pipMirror(ctx, addr, bucket, "pip", "https://"+uri.Host)
+				logger := log.New(os.Stderr, "["+uri.Host+"]", log.LstdFlags|log.Lshortfile)
+				err = pipMirror(ctx, logger, addr, bucket, "pip", "https://"+uri.Host)
 				log.Println(err)
 			default:
 				log.Fatalln("unknown mirror type")

@@ -13,7 +13,7 @@ import (
 	"github.com/minio/minio-go/v7"
 )
 
-func pipMirror(ctx context.Context, addr string, bucket, prefix, remote string) error {
+func pipMirror(ctx context.Context, logger *log.Logger, addr string, bucket, prefix, remote string) error {
 	uri, err := url.Parse(remote)
 	if err != nil {
 		return fmt.Errorf("parse remote: %w", err)
@@ -21,7 +21,7 @@ func pipMirror(ctx context.Context, addr string, bucket, prefix, remote string) 
 	var router http.ServeMux
 
 	packagesProxy := func(w http.ResponseWriter, r *http.Request) error {
-		log.Println("blob cache", addr, r.URL.String(), "=>", remote)
+		logger.Println("blob cache", addr, r.URL.String(), "=>", remote)
 		key := genCacheKey(prefix, r.URL.String())
 		_, err = minioClient.StatObject(ctx, bucket, key, minio.GetObjectOptions{})
 		if err != nil {
@@ -37,7 +37,7 @@ func pipMirror(ctx context.Context, addr string, bucket, prefix, remote string) 
 				return nil
 			}
 			// 小于1M时直接返回
-			if resp.ContentLength < 1024*1024*4 {
+			if resp.ContentLength < 1024*1024*1 {
 				copyHander(w, resp)
 				_, err = io.Copy(w, resp.Body)
 				if err != nil {
@@ -65,8 +65,8 @@ func pipMirror(ctx context.Context, addr string, bucket, prefix, remote string) 
 		http.Redirect(w, r, dlMiniClient.EndpointURL().String()+"/"+key, http.StatusTemporaryRedirect)
 		return nil
 	}
-	simpleProxy := func(w http.ResponseWriter, r *http.Request) error {
-		log.Println("simple proxy", addr, r.URL.String(), "=>", remote)
+	indexProxy := func(w http.ResponseWriter, r *http.Request) error {
+		logger.Println("simple proxy", addr, r.URL.String(), "=>", remote)
 		r.Header.Del("Accept-Encoding")
 		resp, err := proxy(uri, r)
 		if err != nil {
@@ -94,12 +94,14 @@ func pipMirror(ctx context.Context, addr string, bucket, prefix, remote string) 
 	router.HandleFunc("/packages/", func(w http.ResponseWriter, r *http.Request) {
 		err := packagesProxy(w, r)
 		if err != nil {
+			logger.Println("index proxy: %w", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	})
 	router.HandleFunc("/simple/", func(w http.ResponseWriter, r *http.Request) {
-		err := simpleProxy(w, r)
+		err := indexProxy(w, r)
 		if err != nil {
+			logger.Println("index proxy: %w", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	})
