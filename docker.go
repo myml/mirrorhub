@@ -74,8 +74,8 @@ func dockerMirror(ctx context.Context, logger *log.Logger, addr string, bucket, 
 		}
 		defer resp.Body.Close()
 		copyHander(w, resp)
+		w.WriteHeader(resp.StatusCode)
 		if resp.StatusCode == http.StatusNotModified {
-			w.WriteHeader(resp.StatusCode)
 			return nil
 		}
 		_, err = io.Copy(w, resp.Body)
